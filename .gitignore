@@ -11,3 +11,4 @@ wheels/
 output/
 *.lock
 ResNet18_viz.ipynb
+.env

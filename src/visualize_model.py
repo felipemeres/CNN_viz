@@ -2,22 +2,29 @@ import torch
 import torchvision.models as models
 from torchvision.models import ResNet18_Weights
 from visualization_utils import load_image, register_hooks, run_forward, cleanup_hooks, visualize_activations
+import os
+from dotenv import load_dotenv
 
 # --------------------
-# User Parameters
+# User Parameters (now loaded from environment variables)
 # --------------------
-model_type = 'resnet18'  # 'alexnet' or 'resnet18'
-img_path = 'V:/AI/datasets/imagenet/imagenet21k_resized.tar/imagenet21k_resized/imagenet21k_train/n02104280_housedog/n02104280_853.JPEG'
-img_size = (600, 600)  # Image resize dimensions
-show_legend = False  # True to include text/legend, False for clean images
-save_video = True  # True to save video
-video_filename = 'activations.avi'  # Output video file (if saving video)
-fps = 24  # Frames per second for the video
-cmap = 'plasma'  # Colormap for visualization (e.g., 'viridis', 'gray', 'plasma', etc.)
+load_dotenv()
+
+model_type = os.getenv('MODEL_TYPE', 'alexnet')  # 'alexnet' or 'resnet18'
+img_path = os.getenv('IMG_PATH', 'sample_image.jpg')
+img_size = tuple(map(int, os.getenv('IMG_SIZE', '600,600').split(',')))  # Image resize dimensions
+show_legend = os.getenv('SHOW_LEGEND', 'False').lower() in ('true', '1', 'yes')  # True to include text/legend, False for clean images
+save_video = os.getenv('SAVE_VIDEO', 'True').lower() in ('true', '1', 'yes')  # True to save video
+video_filename = os.getenv('VIDEO_FILENAME', 'activations.avi')  # Output video file (if saving video)
+fps = int(os.getenv('FPS', '24'))  # Frames per second for the video
+cmap = os.getenv('CMAP', 'bone')  # Colormap for visualization (e.g., 'viridis', 'gray', 'plasma', etc.)
 # --------------------
 
 # 1. Load and preprocess the image
 input_tensor = load_image(img_path, img_size)
+
+# Set device to GPU if available, else CPU
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 2. Load the selected model and set up layer names and output directory
 if model_type.lower() == 'alexnet':
@@ -45,6 +52,10 @@ elif model_type.lower() == 'resnet18':
 else:
     raise ValueError(f"Unknown model_type: {model_type}. Choose 'alexnet' or 'resnet18'.")
 
+# Move model and input_tensor to the selected device
+model = model.to(device)
+input_tensor = input_tensor.to(device)
+
 activations = {}
 
 # 3. Register hooks to capture activations
@@ -60,7 +71,8 @@ out_dir_used = visualize_activations(
     save_video=save_video,
     video_filename=video_filename,
     fps=fps,
-    cmap=cmap
+    cmap=cmap,
+    img_size=img_size
 )
 # 6. Clean up hooks
 cleanup_hooks(handles) 
