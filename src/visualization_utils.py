@@ -137,29 +137,26 @@ def visualize_activations(
             # --- Histogram equalization ---
             if use_hist_eq:
                 fmap_norm = exposure.equalize_hist(fmap_norm)
-            # --- Save 16-bit PNG (raw, not colormapped) OR visual (colormapped) PNG ---
+            # --- Save 16-bit PNG (raw, not colormapped) ---
             if save_16bit:
                 fmap_16bit = (fmap_norm * 65535).astype(np.uint16)
-                pil_16bit = Image.fromarray(fmap_16bit)
-                pil_16bit = pil_16bit.resize(img_size, resample=Image.BILINEAR)
                 raw16_path = os.path.join(out_dir, f"frame_{frame_counter:04d}_16bit.png")
-                pil_16bit.save(raw16_path)
-                frame_paths.append(raw16_path)
+                Image.fromarray(fmap_16bit).save(raw16_path)
+            # --- Save visual (colormapped) PNG ---
+            frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
+            plt.figure(figsize=figsize, dpi=dpi)
+            plt.imshow(fmap_norm, cmap=cmap)
+            if show_legend:
+                plt.title(f'Layer: {layer}, Filter: {idx}')
+            plt.axis('off')
+            if show_legend:
+                plt.tight_layout()
+                plt.savefig(frame_path)
             else:
-                frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
-                plt.figure(figsize=figsize, dpi=dpi)
-                plt.imshow(fmap_norm, cmap=cmap)
-                if show_legend:
-                    plt.title(f'Layer: {layer}, Filter: {idx}')
-                plt.axis('off')
-                if show_legend:
-                    plt.tight_layout()
-                    plt.savefig(frame_path)
-                else:
-                    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-                    plt.savefig(frame_path, bbox_inches='tight', pad_inches=0)
-                plt.close()
-                frame_paths.append(frame_path)
+                plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+                plt.savefig(frame_path, bbox_inches='tight', pad_inches=0)
+            plt.close()
+            frame_paths.append(frame_path)
             frame_counter += 1
     print(f"Frames saved as PNGs in '{out_dir}'.")
 
@@ -173,19 +170,7 @@ def visualize_activations(
             if not os.path.isabs(video_filename):
                 video_filename = os.path.join(out_dir, video_filename)
         print(f"Saving video to {video_filename} ...")
-        # Use the correct frame paths depending on save_16bit
-        if save_16bit:
-            frame_pattern = os.path.join(out_dir, "frame_*_16bit.png")
-        else:
-            frame_pattern = os.path.join(out_dir, "frame_*.png")
-        import glob
-        video_frame_paths = sorted(glob.glob(frame_pattern))
-        frames = []
-        for fp in video_frame_paths:
-            img = imageio.imread(fp)
-            if save_16bit and img.dtype == np.uint16:
-                img = (img / 256).astype(np.uint8)
-            frames.append(img)
+        frames = [imageio.imread(fp) for fp in frame_paths]
         imageio.mimsave(video_filename, frames, fps=fps, codec='ffv1')
         print(f"Video saved as '{video_filename}'.")
     if return_frame_paths:
