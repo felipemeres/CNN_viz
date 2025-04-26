@@ -18,6 +18,10 @@ save_video = os.getenv('SAVE_VIDEO', 'True').lower() in ('true', '1', 'yes')  # 
 video_filename = os.getenv('VIDEO_FILENAME', 'activations.avi')  # Output video file (if saving video)
 fps = int(os.getenv('FPS', '24'))  # Frames per second for the video
 cmap = os.getenv('CMAP', 'bone')  # Colormap for visualization (e.g., 'viridis', 'gray', 'plasma', etc.)
+normalization_mode = os.getenv('NORMALIZATION_MODE', 'filter')  # 'filter', 'layer', or 'global'
+use_hist_eq = os.getenv('USE_HIST_EQ', 'False').lower() in ('true', '1', 'yes')  # True to use histogram equalization
+clip_percentiles = tuple(map(int, os.getenv('CLIP_PERCENTILES', '1,99').split(',')))  # e.g., (1, 99) to clip outliers
+save_16bit = os.getenv('SAVE_16BIT', 'False').lower() in ('true', '1', 'yes')  # True to save 16-bit PNGs
 # --------------------
 
 # 1. Load and preprocess the image
@@ -72,7 +76,11 @@ out_dir_used = visualize_activations(
     video_filename=video_filename,
     fps=fps,
     cmap=cmap,
-    img_size=img_size
+    img_size=img_size,
+    normalization_mode=normalization_mode,
+    use_hist_eq=use_hist_eq,
+    clip_percentiles=clip_percentiles,
+    save_16bit=save_16bit
 )
 # 6. Clean up hooks
 cleanup_hooks(handles) 

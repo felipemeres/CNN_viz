@@ -4,9 +4,15 @@ This project provides a unified tool to visualize the activations (feature maps)
 
 ## Features
 - Visualize activations from either AlexNet or ResNet18 (pretrained on ImageNet)
-- Save each filter's activation as a PNG image
+- Save each filter's activation as a PNG image (8-bit colormapped or raw 16-bit)
 - Optionally save the sequence as a video (lossless AVI)
 - Choose colormap, image size, and other visualization options
+- **Advanced normalization options:**
+  - Per-filter, per-layer, or global normalization
+  - Outlier clipping by percentile
+  - Histogram equalization for enhanced contrast
+- **High-fidelity output:**
+  - Save raw 16-bit PNGs for quantitative analysis
 - Output is organized by model and timestamp for easy comparison
 
 ## Requirements
@@ -17,10 +23,11 @@ This project provides a unified tool to visualize the activations (feature maps)
 - numpy
 - pillow
 - imageio
+- scikit-image
 
 Install requirements with:
 ```bash
-pip install torch torchvision matplotlib numpy pillow imageio
+pip install torch torchvision matplotlib numpy pillow imageio scikit-image
 ```
 
 ## How to Use
@@ -35,6 +42,14 @@ pip install torch torchvision matplotlib numpy pillow imageio
    - `video_filename`: Name of the output video file (if saving video)
    - `fps`: Frames per second for the video
    - `cmap`: Colormap for visualization (e.g., `'viridis'`, `'plasma'`, `'gray'`)
+   - **Advanced options:**
+     - `normalization_mode`: `'filter'` (default), `'layer'`, or `'global'`. Controls how normalization is applied:
+       - `'filter'`: Each filter is normalized independently (max contrast per filter).
+       - `'layer'`: All filters in a layer are normalized together (preserves relative intensity between filters in a layer).
+       - `'global'`: All filters in all layers are normalized together (preserves global intensity relationships).
+     - `clip_percentiles`: Tuple (low, high), e.g., `(1, 99)`. Clips activation values to this percentile range before normalization to reduce the effect of outliers.
+     - `use_hist_eq`: `True` to apply histogram equalization to the normalized activation map for enhanced visual contrast.
+     - `save_16bit`: `True` to save raw 16-bit PNGs (for quantitative analysis), `False` to save 8-bit colormapped PNGs (for visualization). Only one type is saved per run.
 
 2. **Run the Script:**
    ```bash
@@ -46,6 +61,25 @@ pip install torch torchvision matplotlib numpy pillow imageio
      - `output/alexnet/` (for AlexNet)
      - `output/resnet18/` (for ResNet18)
    - Example: `output/alexnet/20240610_153000/frame_0000.png`, `output/alexnet/20240610_153000/activations.avi`
+   - If `save_16bit=True`, images will be named `frame_0000_16bit.png`.
+
+## Advanced Normalization and Output Options
+
+### `normalization_mode`
+- `'filter'` (default): Each filter's activation map is normalized independently to [0, 1].
+- `'layer'`: All filters in a layer are normalized together, preserving their relative strengths.
+- `'global'`: All filters in all layers are normalized together, preserving global intensity relationships.
+
+### `clip_percentiles`
+- Clips activation values to the specified percentile range (e.g., `(1, 99)`) before normalization. This reduces the influence of extreme outliers and can improve visualization.
+
+### `use_hist_eq`
+- If `True`, applies histogram equalization to the normalized activation map, enhancing contrast and making subtle features more visible.
+
+### `save_16bit`
+- If `True`, saves each activation map as a raw 16-bit PNG (grayscale, no colormap), suitable for quantitative analysis or further processing. The image is resized to `img_size`.
+- If `False`, saves each activation map as an 8-bit PNG with the selected colormap (for human interpretation).
+- **Note:** Only one type of image is saved per run.
 
 ## How the Colors Work
 - The colormap (e.g., `'viridis'`, `'plasma'`) maps normalized activation values to colors for human interpretation.
@@ -65,7 +99,7 @@ The colors of the pixels in the activation images saved by the visualization scr
 
 ### How are the colors determined?
 - Each filter in a convolutional layer produces a 2D array (feature map) of activation values for a given input.
-- In the scripts, these values are **normalized** to the range [0, 1] for visualization.
+- In the scripts, these values are **normalized** to the range [0, 1] for visualization (see normalization options above).
 - The `matplotlib` function `imshow(..., cmap='viridis')` is used to display these values as an image, mapping low values to one color (e.g., dark blue) and high values to another (e.g., yellow), according to the chosen colormap (`'viridis'`).
 
 ### Are the colors part of the learning process?

@@ -6,6 +6,7 @@ from PIL import Image
 from datetime import datetime
 import imageio
 import torchvision.transforms as T
+from skimage import exposure  # Add this import for histogram equalization
 
 def load_image(img_path, img_size=(224, 224)):
     """
@@ -60,17 +61,25 @@ def visualize_activations(
     fps=5,
     cmap='viridis',
     return_frame_paths=False,
-    img_size=(224, 224)
+    img_size=(224, 224),
+    normalization_mode='filter',  # 'filter', 'layer', or 'global'
+    use_hist_eq=False,
+    clip_percentiles=None,  # e.g., (1, 99) to clip outliers
+    save_16bit=False,  # Save 16-bit PNGs of raw activations
 ):
     """
     For each selected layer and each filter in that layer, normalizes the activation map
     and saves it as a PNG image. If show_legend is True, includes a title with layer/filter info;
     otherwise, saves a clean image. All images are saved in the specified output directory.
     If save_video is True, also saves an uncompressed video of the sequence.
+    normalization_mode: 'filter' (default), 'layer', or 'global'.
     fps: frames per second for the output video.
     cmap: the matplotlib colormap to use for visualization (default: 'viridis').
     return_frame_paths: if True, also return the list of frame file paths.
     img_size: tuple, the (width, height) in pixels for the output frames and video.
+    use_hist_eq: if True, use histogram equalization for normalization.
+    clip_percentiles: tuple (low, high) to clip outliers before normalization.
+    save_16bit: if True, save raw 16-bit PNGs of the normalized activations.
     """
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -82,27 +91,75 @@ def visualize_activations(
     width, height = img_size
     dpi = 100
     figsize = (width / dpi, height / dpi)
+
+    # --- Compute normalization stats ---
+    # Gather all activations if needed for global/layer normalization
+    global_min, global_max = None, None
+    layer_mins, layer_maxs = {}, {}
+    if normalization_mode == 'global':
+        all_vals = []
+        for layer, _ in layer_names:
+            fmap = activations[layer][0]
+            all_vals.append(fmap.cpu().numpy().flatten())
+        all_vals = np.concatenate(all_vals)
+        if clip_percentiles:
+            low, high = np.percentile(all_vals, clip_percentiles)
+            all_vals = np.clip(all_vals, low, high)
+        global_min, global_max = np.min(all_vals), np.max(all_vals)
+    elif normalization_mode == 'layer':
+        for layer, _ in layer_names:
+            fmap = activations[layer][0]
+            vals = fmap.cpu().numpy().flatten()
+            if clip_percentiles:
+                low, high = np.percentile(vals, clip_percentiles)
+                vals = np.clip(vals, low, high)
+            layer_mins[layer], layer_maxs[layer] = np.min(vals), np.max(vals)
+
     for layer, _ in layer_names:
         fmap = activations[layer][0]  # (out_channels, h, w)
         num_filters = fmap.shape[0]
         for idx in range(num_filters):
             fmap_slice = fmap[idx].cpu().numpy()
-            # Normalize activation map to [0, 1] for visualization
-            fmap_norm = (fmap_slice - np.min(fmap_slice)) / (np.max(fmap_slice) - np.min(fmap_slice) + 1e-5)
-            frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
-            plt.figure(figsize=figsize, dpi=dpi)
-            plt.imshow(fmap_norm, cmap=cmap)
-            if show_legend:
-                plt.title(f'Layer: {layer}, Filter: {idx}')
-            plt.axis('off')
-            if show_legend:
-                plt.tight_layout()
-                plt.savefig(frame_path)
+            # --- Outlier clipping ---
+            if clip_percentiles:
+                low, high = np.percentile(fmap_slice, clip_percentiles)
+                fmap_slice = np.clip(fmap_slice, low, high)
+            # --- Normalization ---
+            if normalization_mode == 'global' and global_min is not None and global_max is not None:
+                norm_min, norm_max = global_min, global_max
+            elif normalization_mode == 'layer' and layer in layer_mins:
+                norm_min, norm_max = layer_mins[layer], layer_maxs[layer]
+            else:  # 'filter' (default)
+                norm_min, norm_max = np.min(fmap_slice), np.max(fmap_slice)
+            # Avoid division by zero
+            denom = (norm_max - norm_min) if (norm_max - norm_min) > 1e-8 else 1e-8
+            fmap_norm = (fmap_slice - norm_min) / denom
+            # --- Histogram equalization ---
+            if use_hist_eq:
+                fmap_norm = exposure.equalize_hist(fmap_norm)
+            # --- Save 16-bit PNG (raw, not colormapped) OR visual (colormapped) PNG ---
+            if save_16bit:
+                fmap_16bit = (fmap_norm * 65535).astype(np.uint16)
+                pil_16bit = Image.fromarray(fmap_16bit)
+                pil_16bit = pil_16bit.resize(img_size, resample=Image.BILINEAR)
+                raw16_path = os.path.join(out_dir, f"frame_{frame_counter:04d}_16bit.png")
+                pil_16bit.save(raw16_path)
+                frame_paths.append(raw16_path)
             else:
-                plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-                plt.savefig(frame_path, bbox_inches='tight', pad_inches=0)
-            plt.close()
-            frame_paths.append(frame_path)
+                frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
+                plt.figure(figsize=figsize, dpi=dpi)
+                plt.imshow(fmap_norm, cmap=cmap)
+                if show_legend:
+                    plt.title(f'Layer: {layer}, Filter: {idx}')
+                plt.axis('off')
+                if show_legend:
+                    plt.tight_layout()
+                    plt.savefig(frame_path)
+                else:
+                    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+                    plt.savefig(frame_path, bbox_inches='tight', pad_inches=0)
+                plt.close()
+                frame_paths.append(frame_path)
             frame_counter += 1
     print(f"Frames saved as PNGs in '{out_dir}'.")
 
@@ -116,7 +173,19 @@ def visualize_activations(
             if not os.path.isabs(video_filename):
                 video_filename = os.path.join(out_dir, video_filename)
         print(f"Saving video to {video_filename} ...")
-        frames = [imageio.imread(fp) for fp in frame_paths]
+        # Use the correct frame paths depending on save_16bit
+        if save_16bit:
+            frame_pattern = os.path.join(out_dir, "frame_*_16bit.png")
+        else:
+            frame_pattern = os.path.join(out_dir, "frame_*.png")
+        import glob
+        video_frame_paths = sorted(glob.glob(frame_pattern))
+        frames = []
+        for fp in video_frame_paths:
+            img = imageio.imread(fp)
+            if save_16bit and img.dtype == np.uint16:
+                img = (img / 256).astype(np.uint8)
+            frames.append(img)
         imageio.mimsave(video_filename, frames, fps=fps, codec='ffv1')
         print(f"Video saved as '{video_filename}'.")
     if return_frame_paths:
