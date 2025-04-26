@@ -13,6 +13,9 @@ This project provides a unified tool to visualize the activations (feature maps)
   - Histogram equalization for enhanced contrast
 - **High-fidelity output:**
   - Save raw 16-bit PNGs for quantitative analysis
+- **Overlay and statistics:**
+  - Optionally overlay activation heatmaps on the original input image
+  - Optionally print and save raw activation statistics (min, max, mean, std)
 - Output is organized by model and timestamp for easy comparison
 
 ## Requirements
@@ -50,6 +53,8 @@ pip install torch torchvision matplotlib numpy pillow imageio scikit-image
      - `clip_percentiles`: Tuple (low, high), e.g., `(1, 99)`. Clips activation values to this percentile range before normalization to reduce the effect of outliers.
      - `use_hist_eq`: `True` to apply histogram equalization to the normalized activation map for enhanced visual contrast.
      - `save_16bit`: `True` to save raw 16-bit PNGs (for quantitative analysis), `False` to save 8-bit colormapped PNGs (for visualization). Only one type is saved per run.
+     - `overlay_on_image`: `True` to overlay the activation heatmap on the original input image (for each filter), `False` for standard visualization.
+     - `show_raw_stats`: `True` to print and save min, max, mean, and std statistics for each activation map (saved as `activation_stats.txt` in the output directory).
 
 2. **Run the Script:**
    ```bash
@@ -80,6 +85,16 @@ pip install torch torchvision matplotlib numpy pillow imageio scikit-image
 - If `True`, saves each activation map as a raw 16-bit PNG (grayscale, no colormap), suitable for quantitative analysis or further processing. The image is resized to `img_size`.
 - If `False`, saves each activation map as an 8-bit PNG with the selected colormap (for human interpretation).
 - **Note:** Only one type of image is saved per run.
+
+### `overlay_on_image`
+- If `True`, overlays the activation heatmap (colormap) on top of the original input image for each filter, blending the two for easier interpretation of which regions are most active.
+- If `False`, shows only the activation map.
+- The original image is resized to match the activation map if needed.
+
+### `show_raw_stats`
+- If `True`, prints and saves the minimum, maximum, mean, and standard deviation of the raw activation values for each filter to `activation_stats.txt` in the output directory.
+- Useful for quantitative analysis and debugging.
+- If `False`, no statistics are printed or saved.
 
 ## How the Colors Work
 - The colormap (e.g., `'viridis'`, `'plasma'`) maps normalized activation values to colors for human interpretation.
