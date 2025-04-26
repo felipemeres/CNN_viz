@@ -1,10 +1,11 @@
 [project]
 name = "cnn-viz"
 version = "0.1.0"
-description = "Add your description here"
+description = ""
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dotenv>=0.9.9",
     "imageio[ffmpeg]>=2.37.0",
     "matplotlib>=3.10.1",
     "numpy>=2.2.5",
@@ -20,7 +21,6 @@ torch = [
 torchvision = [
     { index = "pytorch-cu124" },
 ]
-
 
 [[tool.uv.index]]
 name = "pytorch-cu124"
