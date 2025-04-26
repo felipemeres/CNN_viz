@@ -59,7 +59,8 @@ def visualize_activations(
     video_filename=None,
     fps=5,
     cmap='viridis',
-    return_frame_paths=False
+    return_frame_paths=False,
+    img_size=(224, 224)
 ):
     """
     For each selected layer and each filter in that layer, normalizes the activation map
@@ -69,6 +70,7 @@ def visualize_activations(
     fps: frames per second for the output video.
     cmap: the matplotlib colormap to use for visualization (default: 'viridis').
     return_frame_paths: if True, also return the list of frame file paths.
+    img_size: tuple, the (width, height) in pixels for the output frames and video.
     """
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -77,6 +79,9 @@ def visualize_activations(
     os.makedirs(out_dir, exist_ok=True)
     frame_counter = 0
     frame_paths = []  # Collect frame file paths
+    width, height = img_size
+    dpi = 100
+    figsize = (width / dpi, height / dpi)
     for layer, _ in layer_names:
         fmap = activations[layer][0]  # (out_channels, h, w)
         num_filters = fmap.shape[0]
@@ -85,7 +90,7 @@ def visualize_activations(
             # Normalize activation map to [0, 1] for visualization
             fmap_norm = (fmap_slice - np.min(fmap_slice)) / (np.max(fmap_slice) - np.min(fmap_slice) + 1e-5)
             frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
-            plt.figure(figsize=(4, 4))
+            plt.figure(figsize=figsize, dpi=dpi)
             plt.imshow(fmap_norm, cmap=cmap)
             if show_legend:
                 plt.title(f'Layer: {layer}, Filter: {idx}')
