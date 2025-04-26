@@ -4,6 +4,8 @@ from torchvision.models import ResNet18_Weights
 from visualization_utils import load_image, register_hooks, run_forward, cleanup_hooks, visualize_activations
 import os
 from dotenv import load_dotenv
+from PIL import Image
+import numpy as np
 
 # --------------------
 # User Parameters (now loaded from environment variables)
@@ -22,6 +24,8 @@ normalization_mode = os.getenv('NORMALIZATION_MODE', 'filter')  # 'filter', 'lay
 use_hist_eq = os.getenv('USE_HIST_EQ', 'False').lower() in ('true', '1', 'yes')  # True to use histogram equalization
 clip_percentiles = tuple(map(int, os.getenv('CLIP_PERCENTILES', '1,99').split(',')))  # e.g., (1, 99) to clip outliers
 save_16bit = os.getenv('SAVE_16BIT', 'False').lower() in ('true', '1', 'yes')  # True to save 16-bit PNGs
+overlay_on_image = os.getenv('OVERLAY_ON_IMAGE', 'False').lower() in ('true', '1', 'yes')
+show_raw_stats = os.getenv('SHOW_RAW_STATS', 'False').lower() in ('true', '1', 'yes')
 # --------------------
 
 # 1. Load and preprocess the image
@@ -66,6 +70,14 @@ activations = {}
 handles = register_hooks(model, layer_names, activations)
 # 4. Run a forward pass to collect activations
 run_forward(model, input_tensor)
+
+# Load original image as numpy array for overlay (not normalized)
+def load_image_for_overlay(img_path, img_size):
+    img = Image.open(img_path).convert('RGB').resize(img_size)
+    return np.array(img)
+
+orig_image = load_image_for_overlay(img_path, img_size) if overlay_on_image else None
+
 # 5. Visualize and save the activations as images (and optionally as video)
 out_dir_used = visualize_activations(
     activations,
@@ -80,7 +92,10 @@ out_dir_used = visualize_activations(
     normalization_mode=normalization_mode,
     use_hist_eq=use_hist_eq,
     clip_percentiles=clip_percentiles,
-    save_16bit=save_16bit
+    save_16bit=save_16bit,
+    overlay_on_image=overlay_on_image,
+    show_raw_stats=show_raw_stats,
+    orig_image=orig_image
 )
 # 6. Clean up hooks
 cleanup_hooks(handles) 

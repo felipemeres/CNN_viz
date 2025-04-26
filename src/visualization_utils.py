@@ -66,6 +66,9 @@ def visualize_activations(
     use_hist_eq=False,
     clip_percentiles=None,  # e.g., (1, 99) to clip outliers
     save_16bit=False,  # Save 16-bit PNGs of raw activations
+    overlay_on_image=False,  # Overlay heatmap on input image
+    show_raw_stats=False,    # Show/save raw stats for each activation
+    orig_image=None          # Original image as a numpy array (H, W, 3), unnormalized, resized
 ):
     """
     For each selected layer and each filter in that layer, normalizes the activation map
@@ -80,6 +83,9 @@ def visualize_activations(
     use_hist_eq: if True, use histogram equalization for normalization.
     clip_percentiles: tuple (low, high) to clip outliers before normalization.
     save_16bit: if True, save raw 16-bit PNGs of the normalized activations.
+    overlay_on_image: if True, overlay activation heatmap on input image.
+    show_raw_stats: if True, print/save min, max, mean, std for each activation map.
+    orig_image: original input image as numpy array (H, W, 3), for overlay.
     """
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
@@ -91,6 +97,7 @@ def visualize_activations(
     width, height = img_size
     dpi = 100
     figsize = (width / dpi, height / dpi)
+    stats_lines = []
 
     # --- Compute normalization stats ---
     # Gather all activations if needed for global/layer normalization
@@ -137,6 +144,19 @@ def visualize_activations(
             # --- Histogram equalization ---
             if use_hist_eq:
                 fmap_norm = exposure.equalize_hist(fmap_norm)
+            # --- Show/save raw stats ---
+            if show_raw_stats:
+                stats = {
+                    'layer': layer,
+                    'filter': idx,
+                    'min': float(np.min(fmap_slice)),
+                    'max': float(np.max(fmap_slice)),
+                    'mean': float(np.mean(fmap_slice)),
+                    'std': float(np.std(fmap_slice))
+                }
+                stats_line = f"Layer: {layer}, Filter: {idx}, min: {stats['min']:.4f}, max: {stats['max']:.4f}, mean: {stats['mean']:.4f}, std: {stats['std']:.4f}"
+                print(stats_line)
+                stats_lines.append(stats_line)
             # --- Save 16-bit PNG (raw, not colormapped) ---
             if save_16bit:
                 fmap_16bit = (fmap_norm * 65535).astype(np.uint16)
@@ -145,7 +165,19 @@ def visualize_activations(
             # --- Save visual (colormapped) PNG ---
             frame_path = os.path.join(out_dir, f"frame_{frame_counter:04d}.png")
             plt.figure(figsize=figsize, dpi=dpi)
-            plt.imshow(fmap_norm, cmap=cmap)
+            if overlay_on_image and orig_image is not None:
+                # Resize fmap_norm to match orig_image
+                fmap_resized = np.array(Image.fromarray((fmap_norm * 255).astype(np.uint8)).resize((orig_image.shape[1], orig_image.shape[0]), resample=Image.BILINEAR)) / 255.0
+                # Get colormap heatmap (RGBA)
+                cmap_func = plt.get_cmap(cmap)
+                heatmap = cmap_func(fmap_resized)[:, :, :3]  # Drop alpha
+                # Blend heatmap with original image
+                overlay_alpha = 0.5
+                overlay = (orig_image / 255.0) * (1 - overlay_alpha) + heatmap * overlay_alpha
+                overlay = np.clip(overlay, 0, 1)
+                plt.imshow(overlay)
+            else:
+                plt.imshow(fmap_norm, cmap=cmap)
             if show_legend:
                 plt.title(f'Layer: {layer}, Filter: {idx}')
             plt.axis('off')
@@ -158,6 +190,12 @@ def visualize_activations(
             plt.close()
             frame_paths.append(frame_path)
             frame_counter += 1
+    # Save stats to file if requested
+    if show_raw_stats and stats_lines:
+        stats_path = os.path.join(out_dir, 'activation_stats.txt')
+        with open(stats_path, 'w') as f:
+            for line in stats_lines:
+                f.write(line + '\n')
     print(f"Frames saved as PNGs in '{out_dir}'.")
 
     # Save video if requested
