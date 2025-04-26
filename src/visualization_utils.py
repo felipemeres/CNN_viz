@@ -172,7 +172,7 @@ def visualize_activations(
                 cmap_func = plt.get_cmap(cmap)
                 heatmap = cmap_func(fmap_resized)[:, :, :3]  # Drop alpha
                 # Blend heatmap with original image
-                overlay_alpha = 0.5
+                overlay_alpha = 0.1
                 overlay = (orig_image / 255.0) * (1 - overlay_alpha) + heatmap * overlay_alpha
                 overlay = np.clip(overlay, 0, 1)
                 plt.imshow(overlay)
