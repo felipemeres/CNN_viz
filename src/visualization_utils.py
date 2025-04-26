@@ -1,12 +1,15 @@
 import os
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 from PIL import Image
 from datetime import datetime
 import imageio
 import torchvision.transforms as T
 from skimage import exposure  # Add this import for histogram equalization
+import cv2
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 def load_image(img_path, img_size=(224, 224)):
     """
@@ -67,7 +70,7 @@ def visualize_activations(
     clip_percentiles=None,  # e.g., (1, 99) to clip outliers
     save_16bit=False,  # Save 16-bit PNGs of raw activations
     overlay_on_image=False,  # Overlay heatmap on input image
-    show_raw_stats=False,    # Show/save raw stats for each activation
+    show_raw_stats=False,    # Show/save raw stats for each activation map
     orig_image=None          # Original image as a numpy array (H, W, 3), unnormalized, resized
 ):
     """
@@ -172,7 +175,7 @@ def visualize_activations(
                 cmap_func = plt.get_cmap(cmap)
                 heatmap = cmap_func(fmap_resized)[:, :, :3]  # Drop alpha
                 # Blend heatmap with original image
-                overlay_alpha = 0.1
+                overlay_alpha = 0.9
                 overlay = (orig_image / 255.0) * (1 - overlay_alpha) + heatmap * overlay_alpha
                 overlay = np.clip(overlay, 0, 1)
                 plt.imshow(overlay)
@@ -213,4 +216,104 @@ def visualize_activations(
         print(f"Video saved as '{video_filename}'.")
     if return_frame_paths:
         return out_dir, frame_paths
-    return out_dir 
+    return out_dir
+
+def visualize_moving_filter(layer_module, filter_idx, moving_input, out_dir, layer_name=None, fps=5, cmap='viridis'):
+    """
+    Visualize the moving filter for a given layer/filter and input (image or activation map).
+    Saves a video in the output directory.
+    """
+    # Get filter weights (for Conv2d)
+    if hasattr(layer_module, 'weight'):
+        # For first layer, weights shape: (out_channels, in_channels, kH, kW)
+        # For later layers, in_channels may > 1
+        weights = layer_module.weight.data.cpu().numpy()[filter_idx]
+    else:
+        print(f"Layer {layer_name} has no weights to visualize.")
+        return
+
+    # Prepare input: if 3D (C, H, W), take mean across channels for visualization
+    if moving_input.ndim == 3:
+        if moving_input.shape[0] == 3 or moving_input.shape[0] == 1:  # (C, H, W)
+            input_vis = np.mean(moving_input, axis=0)
+        else:  # (H, W, C)
+            input_vis = np.mean(moving_input, axis=-1)
+    else:
+        input_vis = moving_input
+    input_vis = (input_vis - np.min(input_vis)) / (np.max(input_vis) - np.min(input_vis) + 1e-8)
+    input_vis = (input_vis * 255).astype(np.uint8)
+    h, w = input_vis.shape
+
+    # Get filter size
+    if weights.ndim == 3:
+        kH, kW = weights.shape[1:]
+    elif weights.ndim == 2:
+        kH, kW = weights.shape
+    else:
+        print(f"Unexpected filter shape: {weights.shape}")
+        return
+
+    # Prepare activation map (output of convolution)
+    stride = layer_module.stride[0] if hasattr(layer_module, 'stride') else 1
+    pad = layer_module.padding[0] if hasattr(layer_module, 'padding') else 0
+    out_h = (h + 2 * pad - kH) // stride + 1
+    out_w = (w + 2 * pad - kW) // stride + 1
+    activation_map = np.zeros((out_h, out_w))
+
+    # Pad input for visualization if needed
+    input_padded = np.pad(input_vis, pad, mode='constant') if pad > 0 else input_vis
+
+    # Prepare colormap
+    cmap_func = plt.get_cmap(cmap)
+
+    frames = []
+    for i in range(out_h):
+        for j in range(out_w):
+            # Get current window
+            window = input_padded[i*stride:i*stride+kH, j*stride:j*stride+kW]
+            # Compute activation (dot product)
+            if weights.ndim == 3:
+                # For multi-channel, sum over channels
+                act_val = np.sum(window * np.mean(weights, axis=0))
+            else:
+                act_val = np.sum(window * weights)
+            activation_map[i, j] = act_val
+
+            # Visualization
+            fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+            # 1. Input with filter window
+            axs[0].imshow(input_vis, cmap='gray')
+            rect = plt.Rectangle((j*stride, i*stride), kW, kH, edgecolor='red', facecolor='none', lw=2)
+            axs[0].add_patch(rect)
+            axs[0].set_title('Input with Filter Window')
+            axs[0].axis('off')
+            # 2. Filter weights
+            axs[1].imshow(np.mean(weights, axis=0) if weights.ndim == 3 else weights, cmap='bwr')
+            axs[1].set_title('Filter Weights')
+            axs[1].axis('off')
+            # 3. Activation map so far
+            act_map_norm = (activation_map - np.min(activation_map)) / (np.max(activation_map) - np.min(activation_map) + 1e-8)
+            axs[2].imshow(act_map_norm, cmap=cmap)
+            axs[2].set_title(f'Activation Map (step {i*out_w+j+1})')
+            axs[2].axis('off')
+            # Show current value
+            axs[2].text(j, i, f'{act_val:.2f}', color='white', ha='center', va='center', fontsize=8, bbox=dict(facecolor='black', alpha=0.5, lw=0))
+            plt.tight_layout()
+            # Save frame to buffer
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            frame = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+            frame = frame.reshape(canvas.get_width_height()[::-1] + (3,))
+            frames.append(frame)
+            plt.close(fig)
+
+    # Save frames as video
+    video_filename = f"moving_filter_{layer_name}_filter{filter_idx:03d}.avi"
+    video_path = os.path.join(out_dir, video_filename)
+    height, width, _ = frames[0].shape
+    out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'ffv1'), fps, (width, height))
+    for frame in frames:
+        out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    out.release()
+    print(f"Moving filter video saved: {video_path}") 
