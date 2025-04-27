@@ -272,60 +272,60 @@ def visualize_moving_filter(layer_module, filter_idx, moving_input, out_dir, lay
     cmap_func = plt.get_cmap(cmap)
 
     frames = []
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    font_color = (255, 255, 255)
+    font_thickness = 1
+    bg_color = (0, 0, 0)
+    pad_px = 5
     for i in range(out_h):
         for j in range(out_w):
-            # Get current window
             window = input_padded[i*stride:i*stride+kH, j*stride:j*stride+kW]
-            # Compute activation (dot product)
             if weights.ndim == 3:
-                # For multi-channel, sum over channels
                 act_val = np.sum(window * np.mean(weights, axis=0))
             else:
                 act_val = np.sum(window * weights)
             activation_map[i, j] = act_val
 
-            # Visualization
-            fig, axs = plt.subplots(1, 4, figsize=(16, 4))  # 4 columns now
             # 1. Input with filter window
-            axs[0].imshow(input_vis, cmap='gray')
-            rect = plt.Rectangle((j*stride, i*stride), kW, kH, edgecolor='red', facecolor='none', lw=2)
-            axs[0].add_patch(rect)
+            input_disp = cv2.cvtColor(input_vis, cv2.COLOR_GRAY2BGR)
+            cv2.rectangle(input_disp, (j*stride, i*stride), (j*stride+kW-1, i*stride+kH-1), (0,0,255), 2)
             if show_legend:
-                axs[0].set_title('Input with Filter Window')
-            axs[0].axis('off')
+                cv2.putText(input_disp, 'Input with Filter Window', (pad_px, 15), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
+
             # 2. Magnified filter window
-            axs[1].imshow(window, cmap='gray', interpolation='nearest')
+            window_disp = window.copy()
+            window_disp = (window_disp - window_disp.min()) / (np.ptp(window_disp) + 1e-8)
+            window_disp = (window_disp * 255).astype(np.uint8)
+            window_disp = cv2.resize(window_disp, (input_vis.shape[1], input_vis.shape[0]), interpolation=cv2.INTER_NEAREST)
+            window_disp = cv2.cvtColor(window_disp, cv2.COLOR_GRAY2BGR)
             if show_legend:
-                axs[1].set_title('Filter Window (Zoomed)')
-            axs[1].axis('off')
+                cv2.putText(window_disp, 'Filter Window (Zoomed)', (pad_px, 15), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
+
             # 3. Filter weights
-            axs[2].imshow(np.mean(weights, axis=0) if weights.ndim == 3 else weights, cmap='bwr')
+            filt = np.mean(weights, axis=0) if weights.ndim == 3 else weights
+            filt_disp = (filt - filt.min()) / (np.ptp(filt) + 1e-8)
+            filt_disp = (filt_disp * 255).astype(np.uint8)
+            filt_disp = cv2.resize(filt_disp, (input_vis.shape[1], input_vis.shape[0]), interpolation=cv2.INTER_NEAREST)
+            filt_disp = cv2.applyColorMap(filt_disp, cv2.COLORMAP_BWR if hasattr(cv2, 'COLORMAP_BWR') else cv2.COLORMAP_JET)
             if show_legend:
-                axs[2].set_title('Filter Weights')
-            axs[2].axis('off')
+                cv2.putText(filt_disp, 'Filter Weights', (pad_px, 15), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
+
             # 4. Activation map so far
             act_map_norm = (activation_map - np.min(activation_map)) / (np.max(activation_map) - np.min(activation_map) + 1e-8)
-            axs[3].imshow(act_map_norm, cmap=cmap)
+            act_disp = (act_map_norm * 255).astype(np.uint8)
+            act_disp = cv2.resize(act_disp, (input_vis.shape[1], input_vis.shape[0]), interpolation=cv2.INTER_NEAREST)
+            act_disp = cv2.applyColorMap(act_disp, cv2.COLORMAP_BONE)
             if show_legend:
-                axs[3].set_title(f'Activation Map (step {i*out_w+j+1})')
-            axs[3].axis('off')
-            # Show current value only if legend is enabled
-            if show_legend:
-                axs[3].text(j, i, f'{act_val:.2f}', color='white', ha='center', va='center', fontsize=8, bbox=dict(facecolor='black', alpha=0.5, lw=0))
-            plt.tight_layout()
-            # Save frame to buffer
-            from matplotlib.backends.backend_agg import FigureCanvasAgg
-            canvas = FigureCanvasAgg(fig)
-            canvas.draw()
-            rgba = np.asarray(canvas.buffer_rgba())
-            frame = rgba[..., :3]  # Drop alpha channel to get RGB
-            frames.append(frame)
-            plt.close(fig)
+                cv2.putText(act_disp, f'Activation Map (step {i*out_w+j+1})', (pad_px, 15), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
+                cv2.putText(act_disp, f'{act_val:.2f}', (j*stride, i*stride+20), font, font_scale, font_color, font_thickness, cv2.LINE_AA)
 
-    # Save frames as video
+            # Concatenate horizontally
+            frame = cv2.hconcat([input_disp, window_disp, filt_disp, act_disp])
+            frames.append(frame)
+
     video_filename = f"moving_filter_{layer_name}_filter{filter_idx:03d}.avi"
     video_path = os.path.join(out_dir, video_filename)
-    # Use imageio.mimsave for consistency and potentially better codec handling
     print(f"Saving moving filter video to {video_path} ...")
     imageio.mimsave(video_path, frames, fps=fps, codec='ffv1', macro_block_size=1)
     print(f"Moving filter video saved: {video_path}") 

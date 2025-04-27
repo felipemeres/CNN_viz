@@ -58,11 +58,11 @@ if model_type.lower() == 'alexnet':
         ('avgpool', model.avgpool),
         # --- Classifier (fully connected part) ---
         # Dropout layers are skipped
-        ('classifier_1', model.classifier[1]),  # Linear1
-        ('classifier_2', model.classifier[2]),  # ReLU6
-        ('classifier_4', model.classifier[4]),  # Linear2
-        ('classifier_5', model.classifier[5]),  # ReLU7
-        ('classifier_6', model.classifier[6]),  # Linear3
+        # ('classifier_1', model.classifier[1]),  # Linear1
+        # ('classifier_2', model.classifier[2]),  # ReLU6
+        # ('classifier_4', model.classifier[4]),  # Linear2
+        # ('classifier_5', model.classifier[5]),  # ReLU7
+        # ('classifier_6', model.classifier[6]),  # Linear3
     ]
     out_dir = 'output/alexnet'
 elif model_type.lower() == 'resnet18':
