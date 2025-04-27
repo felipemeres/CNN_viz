@@ -26,6 +26,7 @@ clip_percentiles = tuple(map(int, os.getenv('CLIP_PERCENTILES', '1,99').split(',
 save_16bit = os.getenv('SAVE_16BIT', 'False').lower() in ('true', '1', 'yes')  # True to save 16-bit PNGs
 overlay_on_image = os.getenv('OVERLAY_ON_IMAGE', 'False').lower() in ('true', '1', 'yes')
 show_raw_stats = os.getenv('SHOW_RAW_STATS', 'False').lower() in ('true', '1', 'yes')
+show_moving_filter = os.getenv('SHOW_MOVING_FILTER', 'False').lower() in ('true', '1', 'yes')
 # --------------------
 
 # 1. Load and preprocess the image
@@ -39,11 +40,29 @@ if model_type.lower() == 'alexnet':
     model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
     model.eval()
     layer_names = [
+        # --- Features (convolutional part) ---
         ('features_0', model.features[0]),  # Conv1
+        ('features_1', model.features[1]),  # ReLU1
+        ('features_2', model.features[2]),  # MaxPool1
         ('features_3', model.features[3]),  # Conv2
+        ('features_4', model.features[4]),  # ReLU2
+        ('features_5', model.features[5]),  # MaxPool2
         ('features_6', model.features[6]),  # Conv3
+        ('features_7', model.features[7]),  # ReLU3
         ('features_8', model.features[8]),  # Conv4
+        ('features_9', model.features[9]),  # ReLU4
         ('features_10', model.features[10]), # Conv5
+        ('features_11', model.features[11]), # ReLU5
+        ('features_12', model.features[12]), # MaxPool3
+        # --- AdaptiveAvgPool2d ---
+        ('avgpool', model.avgpool),
+        # --- Classifier (fully connected part) ---
+        # Dropout layers are skipped
+        ('classifier_1', model.classifier[1]),  # Linear1
+        ('classifier_2', model.classifier[2]),  # ReLU6
+        ('classifier_4', model.classifier[4]),  # Linear2
+        ('classifier_5', model.classifier[5]),  # ReLU7
+        ('classifier_6', model.classifier[6]),  # Linear3
     ]
     out_dir = 'output/alexnet'
 elif model_type.lower() == 'resnet18':
@@ -97,5 +116,32 @@ out_dir_used = visualize_activations(
     show_raw_stats=show_raw_stats,
     orig_image=orig_image
 )
+
+# 5b. Visualize moving filter if enabled
+if show_moving_filter:
+    from visualization_utils import visualize_moving_filter
+    # For each layer and filter, call visualize_moving_filter
+    for layer_name, layer_module in layer_names:
+        fmap = activations[layer_name][0]  # (out_channels, h, w)
+        num_filters = fmap.shape[0]
+        # For first layer, use original image; for others, use previous activation
+        if layer_names.index((layer_name, layer_module)) == 0:
+            moving_input = orig_image if orig_image is not None else load_image_for_overlay(img_path, img_size)
+        else:
+            prev_layer_name, _ = layer_names[layer_names.index((layer_name, layer_module)) - 1]
+            # Use the mean across all filters of the previous layer as input for visualization
+            moving_input = np.mean(activations[prev_layer_name][0].cpu().numpy(), axis=0)
+        for filter_idx in range(num_filters):
+            visualize_moving_filter(
+                layer_module,
+                filter_idx,
+                moving_input,
+                out_dir_used,
+                layer_name=layer_name,
+                fps=fps,
+                cmap=cmap,
+                show_legend=show_legend
+            )
+
 # 6. Clean up hooks
 cleanup_hooks(handles) 

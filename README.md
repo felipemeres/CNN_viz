@@ -17,6 +17,10 @@ This project provides a unified tool to visualize the activations (feature maps)
   - Optionally overlay activation heatmaps on the original input image
   - Optionally print and save raw activation statistics (min, max, mean, std)
 - Output is organized by model and timestamp for easy comparison
+- **Moving filter visualization:**
+  - For each filter, generates a video showing how the filter slides over the input.
+  - **Now includes a fourth subplot:**
+    - The video frame shows: (1) the input image with the filter window, (2) a magnified view of the current filter window, (3) the filter weights, and (4) the activation map as it is built up.
 
 ## Requirements
 - Python 3.8+
@@ -131,4 +135,15 @@ The colors of the pixels in the activation images saved by the visualization scr
 **Summary:**
 - The colors are a visualization of the learned filter responses to your input image.
 - The mapping from activation value to color is arbitrary and for human interpretation only.
-- The actual values (and thus the patterns you see) are a direct result of the network's learning, but the colors themselves are not learned or random—they are chosen by the visualization code. 
+- The actual values (and thus the patterns you see) are a direct result of the network's learning, but the colors themselves are not learned or random—they are chosen by the visualization code.
+
+## Moving Filter Visualization
+
+When using the moving filter visualization (enabled via `show_moving_filter=True` in `src/visualize_model.py`), the tool generates a video for each filter in the selected layer. **Each frame of the video now includes four panels:**
+
+1. **Input with Filter Window:** The original (grayscale) input image with a red rectangle showing the current position of the filter window.
+2. **Magnified Filter Window:** A zoomed-in view of the exact pixels currently under the filter window, making it easy to see what the filter is convolving over at each step.
+3. **Filter Weights:** The weights of the filter being applied, visualized as an image.
+4. **Activation Map So Far:** The activation map as it is built up, with the current value annotated (if `show_legend=True`).
+
+This enhancement makes it much easier to understand what the filter is "seeing" at each step of the convolution process. 

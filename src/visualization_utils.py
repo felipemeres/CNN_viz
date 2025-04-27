@@ -180,7 +180,10 @@ def visualize_activations(
                 overlay = np.clip(overlay, 0, 1)
                 plt.imshow(overlay)
             else:
-                plt.imshow(fmap_norm, cmap=cmap)
+                if np.isscalar(fmap_norm) or getattr(fmap_norm, 'ndim', 1) == 0:
+                    plt.imshow(np.array([[fmap_norm]]), cmap=cmap)
+                else:
+                    plt.imshow(fmap_norm, cmap=cmap)
             if show_legend:
                 plt.title(f'Layer: {layer}, Filter: {idx}')
             plt.axis('off')
@@ -212,16 +215,18 @@ def visualize_activations(
                 video_filename = os.path.join(out_dir, video_filename)
         print(f"Saving video to {video_filename} ...")
         frames = [imageio.imread(fp) for fp in frame_paths]
-        imageio.mimsave(video_filename, frames, fps=fps, codec='ffv1')
+        # Use macro_block_size=1 to avoid resizing warnings/errors
+        imageio.mimsave(video_filename, frames, fps=fps, codec='ffv1', macro_block_size=1)
         print(f"Video saved as '{video_filename}'.")
     if return_frame_paths:
         return out_dir, frame_paths
     return out_dir
 
-def visualize_moving_filter(layer_module, filter_idx, moving_input, out_dir, layer_name=None, fps=5, cmap='viridis'):
+def visualize_moving_filter(layer_module, filter_idx, moving_input, out_dir, layer_name=None, fps=5, cmap='viridis', show_legend=True):
     """
     Visualize the moving filter for a given layer/filter and input (image or activation map).
     Saves a video in the output directory.
+    If show_legend is False, subplot titles and activation values are omitted.
     """
     # Get filter weights (for Conv2d)
     if hasattr(layer_module, 'weight'):
@@ -280,40 +285,47 @@ def visualize_moving_filter(layer_module, filter_idx, moving_input, out_dir, lay
             activation_map[i, j] = act_val
 
             # Visualization
-            fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+            fig, axs = plt.subplots(1, 4, figsize=(16, 4))  # 4 columns now
             # 1. Input with filter window
             axs[0].imshow(input_vis, cmap='gray')
             rect = plt.Rectangle((j*stride, i*stride), kW, kH, edgecolor='red', facecolor='none', lw=2)
             axs[0].add_patch(rect)
-            axs[0].set_title('Input with Filter Window')
+            if show_legend:
+                axs[0].set_title('Input with Filter Window')
             axs[0].axis('off')
-            # 2. Filter weights
-            axs[1].imshow(np.mean(weights, axis=0) if weights.ndim == 3 else weights, cmap='bwr')
-            axs[1].set_title('Filter Weights')
+            # 2. Magnified filter window
+            axs[1].imshow(window, cmap='gray', interpolation='nearest')
+            if show_legend:
+                axs[1].set_title('Filter Window (Zoomed)')
             axs[1].axis('off')
-            # 3. Activation map so far
-            act_map_norm = (activation_map - np.min(activation_map)) / (np.max(activation_map) - np.min(activation_map) + 1e-8)
-            axs[2].imshow(act_map_norm, cmap=cmap)
-            axs[2].set_title(f'Activation Map (step {i*out_w+j+1})')
+            # 3. Filter weights
+            axs[2].imshow(np.mean(weights, axis=0) if weights.ndim == 3 else weights, cmap='bwr')
+            if show_legend:
+                axs[2].set_title('Filter Weights')
             axs[2].axis('off')
-            # Show current value
-            axs[2].text(j, i, f'{act_val:.2f}', color='white', ha='center', va='center', fontsize=8, bbox=dict(facecolor='black', alpha=0.5, lw=0))
+            # 4. Activation map so far
+            act_map_norm = (activation_map - np.min(activation_map)) / (np.max(activation_map) - np.min(activation_map) + 1e-8)
+            axs[3].imshow(act_map_norm, cmap=cmap)
+            if show_legend:
+                axs[3].set_title(f'Activation Map (step {i*out_w+j+1})')
+            axs[3].axis('off')
+            # Show current value only if legend is enabled
+            if show_legend:
+                axs[3].text(j, i, f'{act_val:.2f}', color='white', ha='center', va='center', fontsize=8, bbox=dict(facecolor='black', alpha=0.5, lw=0))
             plt.tight_layout()
             # Save frame to buffer
             from matplotlib.backends.backend_agg import FigureCanvasAgg
             canvas = FigureCanvasAgg(fig)
             canvas.draw()
-            frame = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
-            frame = frame.reshape(canvas.get_width_height()[::-1] + (3,))
+            rgba = np.asarray(canvas.buffer_rgba())
+            frame = rgba[..., :3]  # Drop alpha channel to get RGB
             frames.append(frame)
             plt.close(fig)
 
     # Save frames as video
     video_filename = f"moving_filter_{layer_name}_filter{filter_idx:03d}.avi"
     video_path = os.path.join(out_dir, video_filename)
-    height, width, _ = frames[0].shape
-    out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'ffv1'), fps, (width, height))
-    for frame in frames:
-        out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-    out.release()
+    # Use imageio.mimsave for consistency and potentially better codec handling
+    print(f"Saving moving filter video to {video_path} ...")
+    imageio.mimsave(video_path, frames, fps=fps, codec='ffv1', macro_block_size=1)
     print(f"Moving filter video saved: {video_path}") 
